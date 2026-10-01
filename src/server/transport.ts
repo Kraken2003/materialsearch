@@ -3,6 +3,37 @@ import { cached, configuredLimit, takeQuota } from './store';
 export class UpstreamError extends Error { constructor(public state: 'unavailable' | 'quota-limited', message: string) { super(message); } }
 const ALLOWED_HOSTS = new Set(['www.crystallography.net','optimade.materialscloud.org','api.materialsproject.org','api.crossref.org','api.openalex.org']);
 const DEFAULT_LIMITS: Record<string,number> = { cod: 300, mcloud: 300, mp: 200, crossref: 400, openalex: 50 };
+async function fetchSource(url: string, source: string, headers: Record<string,string>): Promise<Response> {
+ const deadline = AbortSignal.timeout(source === 'cod' ? 45000 : 12000);
+ const attempts = source === 'cod' ? 2 : 1;
+ for (let attempt = 0; attempt < attempts; attempt++) {
+   let current = url;
+   const signal = source === 'cod' ? AbortSignal.any([deadline,AbortSignal.timeout(22000)]) : deadline;
+   try {
+     for (let redirects = 0; ; redirects++) {
+       const response = await fetch(current,{headers,signal,cache:'no-store',redirect:'manual'});
+       if ([301,302,303,307,308].includes(response.status)) {
+         const location = response.headers.get('location');
+         await response.body?.cancel();
+         const next = location ? new URL(location,current) : undefined;
+         if (source !== 'cod' || redirects >= 3 || !next || next.protocol !== 'https:' || next.host !== 'www.crystallography.net' || next.username || next.password || !/^\/cod\/optimade\/v1(?:\.\d+(?:\.\d+)?)?\/structures\/?$/.test(next.pathname)) throw new UpstreamError('unavailable','The source returned an unsafe redirect.');
+         current = next.href;
+         continue;
+       }
+       if (source === 'cod' && [502,503,504].includes(response.status) && attempt+1 < attempts && !deadline.aborted) {
+         await response.body?.cancel();
+         break;
+       }
+       return response;
+     }
+   } catch (error) {
+     if (error instanceof UpstreamError) throw error;
+     if (attempt+1 < attempts && !deadline.aborted) continue;
+     throw error;
+   }
+ }
+ throw new UpstreamError('unavailable','The source is temporarily unavailable.');
+}
 export async function requestJson(url: string, source = 'cod', headers: Record<string,string> = {}): Promise<any> {
  const parsed = new URL(url);
  if (parsed.protocol !== 'https:' || !ALLOWED_HOSTS.has(parsed.hostname) || parsed.port || parsed.username || parsed.password) throw new UpstreamError('unavailable','Invalid source endpoint.');
@@ -12,19 +43,25 @@ export async function requestJson(url: string, source = 'cod', headers: Record<s
    const seconds = Math.ceil((Date.parse(day+'T00:00:00Z')+86400000-Date.now())/1000);
    if (!await takeQuota(source+':'+day,configuredLimit(source.toUpperCase()+'_DAILY_LIMIT',DEFAULT_LIMITS[source] ?? 100),seconds)) throw new UpstreamError('quota-limited','Daily search allowance reached. Try again after midnight UTC.');
    try {
-     const r = await fetch(url, { headers: { Accept:'application/json', 'User-Agent':'MaterialAtlas/0.1'+(process.env.CONTACT_EMAIL ? ' (mailto:'+process.env.CONTACT_EMAIL+')' : ''), ...headers }, signal: AbortSignal.timeout(12000), cache:'no-store', redirect:'error' });
+     const r = await fetchSource(url,source,{ Accept:'application/json', 'User-Agent':'MaterialAtlas/0.1'+(process.env.CONTACT_EMAIL ? ' (mailto:'+process.env.CONTACT_EMAIL+')' : ''), ...headers });
      if (r.status === 429 || r.status === 402) throw new UpstreamError('quota-limited','The source has reached its usage allowance. Try again later.');
      if (!r.ok) throw new UpstreamError('unavailable',r.status === 401 || r.status === 403 ? 'Source access was refused. The site owner should check its API credentials.' : 'The source is temporarily unavailable.');
      if (Number(r.headers.get('content-length')) > 5000000) throw new UpstreamError('unavailable','Source response was too large.');
-     const reader = r.body?.getReader(); if (!reader) throw new Error();
+     const reader = r.body?.getReader(); if (!reader) throw new UpstreamError('unavailable','The source returned an empty response.');
      const chunks: Uint8Array[] = []; let size = 0;
-     while (true) { const { done,value } = await reader.read(); if (done) break; size += value.length; if (size > 5000000) { await reader.cancel(); throw new Error(); } chunks.push(value); }
-     const data = JSON.parse(Buffer.concat(chunks).toString());
-     if (!data || typeof data !== 'object') throw new Error();
+     while (true) { const { done,value } = await reader.read(); if (done) break; size += value.length; if (size > 5000000) { await reader.cancel(); throw new UpstreamError('unavailable','Source response was too large.'); } chunks.push(value); }
+     let data;
+     try { data = JSON.parse(Buffer.concat(chunks).toString()); }
+     catch { throw new UpstreamError('unavailable','The source returned invalid JSON. Try again later.'); }
+     if (!data || typeof data !== 'object') throw new UpstreamError('unavailable','The source returned an invalid result envelope.');
      return { ...data, __retrievedAt: new Date().toISOString() };
    } catch (e) {
      if (e instanceof UpstreamError) throw e;
-     throw new UpstreamError('unavailable','The source did not respond with usable data in time. Try again.');
+     const error = e as {name?:string;cause?:{code?:string}};
+     const code = error.cause?.code;
+     console.error('MaterialAtlas upstream request failed',{source,host:parsed.hostname,name:error.name,code});
+     const timedOut = error.name === 'TimeoutError' || error.name === 'AbortError' || code === 'UND_ERR_CONNECT_TIMEOUT' || code === 'ETIMEDOUT';
+     throw new UpstreamError('unavailable',timedOut ? 'The source timed out. Try again later.' : 'The server could not connect to the source. Try again later.');
    }
  });
 }

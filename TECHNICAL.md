@@ -48,7 +48,7 @@ The app makes no paid AI calls or paid fallback requests. Hosting and external A
 - Per-instance public limit: 1,000 API calls/day. Source fan-out in the UI uses one API call per selected database. Literature requests use another call.
 - Per-instance upstream daily cache-miss caps: COD 300, Materials Cloud 300, Materials Project 200, Crossref 400, OpenAlex 50. UTC daily reset, or earlier on restart.
 - Materials cached 15 minutes; paper metadata cached 1 hour. Concurrent identical calls coalesce within the same process.
-- Every upstream request has a 12-second timeout, a bounded response size, and no automatic retry. Rate/quota failures are displayed independently.
+- COD requests use an explicit Undici connection timeout of 22 seconds, one retry for transient connection or HTTP 502/503/504 failures, and a 45-second overall budget. Other sources retain a 12-second timeout without retries. Responses are size-limited; rate/quota failures are displayed independently. Vercel functions run in Mumbai (`bom1`) to avoid the Washington connection path that timed out when contacting COD. Connectivity from Mumbai must be verified after deployment.
 - Configure caps in the environment template. No arbitrary URLs are accepted: only fixed provider endpoints and signed, validated pagination links.
 
 ## API

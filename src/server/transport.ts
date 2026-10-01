@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto';
+import { Agent, fetch as undiciFetch, type Response as UndiciResponse } from 'undici';
 import { cached, configuredLimit, takeQuota } from './store';
 export class UpstreamError extends Error { constructor(public state: 'unavailable' | 'quota-limited', message: string) { super(message); } }
 const ALLOWED_HOSTS = new Set(['www.crystallography.net','optimade.materialscloud.org','api.materialsproject.org','api.crossref.org','api.openalex.org']);
 const DEFAULT_LIMITS: Record<string,number> = { cod: 300, mcloud: 300, mp: 200, crossref: 400, openalex: 50 };
-async function fetchSource(url: string, source: string, headers: Record<string,string>): Promise<Response> {
+const codDispatcher = new Agent({connect:{timeout:22000},autoSelectFamily:true,autoSelectFamilyAttemptTimeout:250});
+async function fetchSource(url: string, source: string, headers: Record<string,string>): Promise<Response | UndiciResponse> {
  const deadline = AbortSignal.timeout(source === 'cod' ? 45000 : 12000);
  const attempts = source === 'cod' ? 2 : 1;
  for (let attempt = 0; attempt < attempts; attempt++) {
@@ -11,7 +13,10 @@ async function fetchSource(url: string, source: string, headers: Record<string,s
    const signal = source === 'cod' ? AbortSignal.any([deadline,AbortSignal.timeout(22000)]) : deadline;
    try {
      for (let redirects = 0; ; redirects++) {
-       const response = await fetch(current,{headers,signal,cache:'no-store',redirect:'manual'});
+       const options = {headers,signal,cache:'no-store' as const,redirect:'manual' as const};
+       const response = source === 'cod'
+         ? await undiciFetch(current,{...options,dispatcher:codDispatcher})
+         : await fetch(current,options);
        if ([301,302,303,307,308].includes(response.status)) {
          const location = response.headers.get('location');
          await response.body?.cancel();
@@ -35,6 +40,7 @@ async function fetchSource(url: string, source: string, headers: Record<string,s
  throw new UpstreamError('unavailable','The source is temporarily unavailable.');
 }
 export async function requestJson(url: string, source = 'cod', headers: Record<string,string> = {}): Promise<any> {
+ const started = Date.now();
  const parsed = new URL(url);
  if (parsed.protocol !== 'https:' || !ALLOWED_HOSTS.has(parsed.hostname) || parsed.port || parsed.username || parsed.password) throw new UpstreamError('unavailable','Invalid source endpoint.');
  const key = createHash('sha256').update(url+JSON.stringify(headers)).digest('hex');
@@ -59,9 +65,9 @@ export async function requestJson(url: string, source = 'cod', headers: Record<s
      if (e instanceof UpstreamError) throw e;
      const error = e as {name?:string;cause?:{code?:string}};
      const code = error.cause?.code;
-     console.error('MaterialAtlas upstream request failed',{source,host:parsed.hostname,name:error.name,code});
+     console.error('MaterialAtlas upstream request failed',{source,host:parsed.hostname,name:error.name,code,region:process.env.VERCEL_REGION,elapsedMs:Date.now()-started});
      const timedOut = error.name === 'TimeoutError' || error.name === 'AbortError' || code === 'UND_ERR_CONNECT_TIMEOUT' || code === 'ETIMEDOUT';
-     throw new UpstreamError('unavailable',timedOut ? 'The source timed out. Try again later.' : 'The server could not connect to the source. Try again later.');
+     throw new UpstreamError('unavailable',code === 'UND_ERR_CONNECT_TIMEOUT' ? 'The hosting server could not establish a connection to the source. Try again later.' : timedOut ? 'The source timed out. Try again later.' : 'The server could not connect to the source. Try again later.');
    }
  });
 }

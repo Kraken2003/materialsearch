@@ -1,6 +1,17 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { requestJson } from '../src/server/transport';
-afterEach(()=>{vi.unstubAllGlobals();vi.unstubAllEnvs();});
+import { fetch as codFetch, Agent } from 'undici';
+vi.mock('undici',async importOriginal=>{
+ const actual=await importOriginal<typeof import('undici')>();
+ return {...actual,fetch:vi.fn((url: string,options: RequestInit)=>globalThis.fetch(url,options))};
+});
+afterEach(()=>{vi.unstubAllGlobals();vi.unstubAllEnvs();vi.clearAllMocks();});
+it('uses a configurable connection dispatcher for COD instead of the built-in fetch connector',async()=>{
+ vi.stubEnv('NODE_ENV','development');
+ vi.stubGlobal('fetch',vi.fn().mockResolvedValue(Response.json({data:[]})));
+ await requestJson('https://www.crystallography.net/cod/optimade/v1/structures?connector-test=1','cod');
+ expect(codFetch).toHaveBeenCalledWith(expect.any(String),expect.objectContaining({dispatcher:expect.any(Agent)}));
+});
 it('retries a transient COD connection failure',async()=>{
  vi.stubEnv('NODE_ENV','development');
  const fetch=vi.fn().mockRejectedValueOnce(new TypeError('fetch failed')).mockResolvedValueOnce(Response.json({data:[]}));vi.stubGlobal('fetch',fetch);

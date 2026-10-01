@@ -1,91 +1,73 @@
 # Material Atlas
 
-Search open materials databases by element composition, then discover related literature. Database materials remain visible and exportable even when no references or papers are available.
+Material Atlas helps you find materials by their element composition and explore the research around them. Select elements on a periodic table, search materials databases, and open a result to inspect its properties, source references, and related papers.
+
+It is useful when you know the elements you want to investigate but have not settled on a specific compound. For example, selecting iron and oxygen lets you browse iron oxide records, follow their original database entries, and look for research on magnetic properties or synthesis.
+
+## Search workflow
+
+1. Select the elements a material must include. Switch to **Exclude elements** to rule out elements you want to avoid.
+2. Choose a match mode. **Contains all selected elements** allows additional elements; **Only these elements** limits results to the selected element set.
+3. Click **Search materials**. Results arrive from the available databases, with a separate status for each source.
+4. Open a record to see its available properties, original database link, references, and source attribution. Related papers are searched automatically; add keywords to refine that search.
+5. Load more results from individual databases, export the loaded records as CSV, or copy a link to share the composition search.
+
+The example compositions provide starting selections for iron oxides, lithium–iron–phosphorus–oxygen battery materials, and silicon oxides. Select an example, then run the search.
+
+### Matching elements
+
+With Fe and O selected, **Contains all selected elements** can return compounds containing iron and oxygen alongside other elements. **Only these elements** returns records containing just iron and oxygen, across different ratios such as FeO and Fe₂O₃. Neither mode specifies a particular formula ratio.
+
+Excluded elements are rejected in either mode. Composition matches describe the elements present; they do not establish a material's suitability for a particular application.
+
+## How it works
+
+The browser sends your composition to the app's server, which queries the available materials databases independently. COD and Materials Cloud work without API keys. Materials Project becomes available when the site owner configures access.
+
+The server converts each database response into a common record format and checks that its elements match your selection. Results are grouped by formula, while distinct database records remain separate. Each record retains its source link, attribution, and retrieval time so you can trace it back to the original entry.
+
+Opening a record starts a separate literature search through Crossref and, when configured, OpenAlex. The search uses the material's formula, formula aliases, element names, and any keywords you add. Duplicate papers are combined, and open-access links are shown when available.
+
+A database outage is reported beside that source; successful results from other databases remain usable. Missing references or a failed literature search also leave the material record visible and exportable. Failed live requests are never replaced with demo results.
+
+## Sources and interpreting results
+
+| Source | Contribution |
+| --- | --- |
+| COD | Experimental crystal-structure records. |
+| Materials Cloud MC3D | Computed relaxed crystal structures. |
+| Materials Project | Computed material records and properties, when access is configured. |
+| Crossref | Publication metadata and links for related research. |
+| OpenAlex | Additional publication metadata and open-access links, when access is configured. |
+
+Properties depend on the source. A record may include a space group, cell volume, band gap, or energy above hull; missing values are marked unavailable. Check the original record and calculation methods before comparing values across databases.
+
+Database-supplied record references, general dataset citations, and papers discovered through search are labeled separately. A related paper is a candidate for further reading; its appearance does not establish that it studied or validated the exact structure. Literature searches can miss relevant work.
+
+CSV exports contain only the records currently loaded, including source identifiers, available properties, references, and attribution. Load additional pages before exporting if you need more records. Shared search links preserve the composition query, rather than a fixed snapshot of the results.
+
+See [source attribution and reuse terms](TECHNICAL.md#data-sources-and-reuse) before reusing database records.
 
 ## Run locally
 
-Node.js 22.12+ or 24 is recommended.
+Use Node.js 22.12+ or 24.
 
 ```sh
-cd /Users/prithvi/Desktop/materialsearch
 npm install
 cp .env.example .env.local
 npm run dev
 ```
 
-Open http://localhost:3000. COD, Materials Cloud, and Crossref work without keys. No demo results are substituted for failed live requests.
+Open [localhost:3000](http://localhost:3000). The default setup can search COD, Materials Cloud, and Crossref without keys. Optional Materials Project and OpenAlex credentials belong in `.env.local`; restart the server after changing them.
 
-Optional: put your free Materials Project key in `MP_API_KEY` and OpenAlex key in `OPENALEX_API_KEY` in `.env.local`. Restart the development server after changing configuration. Never use `NEXT_PUBLIC_` for keys.
+## Technical documentation
 
-## Data sources and reuse
+The [technical guide](TECHNICAL.md) contains:
 
-| Source | Integration | Attribution and access |
-| --- | --- | --- |
-| [COD](https://www.crystallography.net/cod/) | OPTIMADE v1; experimental structural records | CC0. Acknowledge COD and original structural-data authors. |
-| [Materials Cloud MC3D](https://archive.materialscloud.org/records/szjaf-cfv74) | PBE-v1 OPTIMADE; computed relaxed structures | CC BY 4.0 dataset. Cite Huber et al., MC3D, DOI [10.24435/materialscloud:jn-ac](https://doi.org/10.24435/materialscloud:jn-ac). We expose normalized metadata from public relaxed structures; copyrighted original ICSD/MPDS source structures are not downloaded or redistributed. |
-| [Materials Project](https://docs.materialsproject.org/downloading-data/using-the-api/getting-started) | Current materials/summary REST API | Requires a free account key. Check current account/API-use and dataset-specific terms before public use. No blanket reuse license is asserted. GNoME batch is excluded. |
-| [Crossref](https://www.crossref.org/documentation/retrieve-metadata/rest-api/) | Bibliographic metadata search | Public API; no registration required. Supply `CONTACT_EMAIL` for polite access. Metadata availability varies; this app does not reproduce abstracts or paper full text. |
-| [OpenAlex](https://help.openalex.org/access/pricing/) | Works search, DOI, authors, open-access links | Optional free key. Current daily free allowance is limited; keep caps conservative and do not purchase credits. |
-
-The two keyless materials endpoints returned real Si–O records during initial verification on October 1, 2026. Endpoints, uptime, quotas, and terms can change.
-
-References supplied by a record are separate from general dataset citations and search-discovered papers. References with a DOI or safe URL link directly to that publication; references without either link to a clearly labeled Google Scholar title search. Literature results are relevance candidates, not evidence that a paper synthesized or validated the exact structure. Formula aliases and full element names help discovery, but this is not an exhaustive systematic-review search.
-
-## Public deployment on Vercel
-
-1. Import this directory as a Next.js project. Build: `npm run build`. No database migrations are needed.
-2. Run `openssl rand -hex 32` yourself and put its output in `CURSOR_SECRET`. Keep this secret stable across deployments.
-3. Add optional API keys and `CONTACT_EMAIL`. Public Materials Project access also requires `MP_PUBLIC_USE_CONFIRMED=true` after reviewing your account's current terms. Its adapter remains disabled in production until both conditions are met.
-4. Deploy. Confirm `/api/providers` reports `searchReady: true`, then perform a live composition search, pagination, CSV export, and literature search.
-
-No external cache or database service is required. Development and production both use bounded in-memory caches and counters. Limits and request coalescing apply per server instance and reset on restart; they are not global limits across a serverless deployment. Production still requires a cursor-signing secret to prevent pagination tampering.
-
-The app makes no paid AI calls or paid fallback requests. Hosting and external API allowances remain subject to provider plans; per-instance request caps cannot guarantee a zero hosting bill or enforce an account-wide daily budget. Start on free plans without paid overages.
-
-## Quotas and failure behavior
-
-- Per-client limit: 12 API calls/minute. On Vercel, client identity uses Vercel's forwarded IP header and stores only its hash. Other hosts share one conservative client bucket.
-- Per-instance public limit: 1,000 API calls/day. Source fan-out in the UI uses one API call per selected database. Literature requests use another call.
-- Per-instance upstream daily cache-miss caps: COD 300, Materials Cloud 300, Materials Project 200, Crossref 400, OpenAlex 50. UTC daily reset, or earlier on restart.
-- Materials cached 15 minutes; paper metadata cached 1 hour. Concurrent identical calls coalesce within the same process.
-- Every upstream request has a 12-second timeout, a bounded response size, and no automatic retry. Rate/quota failures are displayed independently.
-- Configure caps in the environment template. No arbitrary URLs are accepted: only fixed provider endpoints and signed, validated pagination links.
-
-## API
-
-`POST /api/materials/search` accepts:
-
-```json
-{"include":["Fe","O"],"exclude":["Pb"],"mode":"contains","sources":["cod","mcloud"],"cursors":{}}
-```
-
-Returns normalized `records`, the validated `query`, and per-source `sources` statuses. Each source can return an opaque `nextCursor`. Pass it back under that source's identifier with the same composition. Cursors expire after one hour. Statuses: `ok`, `empty`, `unavailable`, `quota-limited`, `disabled`. Failed sources do not remove successful records.
-
-`POST /api/papers/search` accepts:
-
-```json
-{"formula":"Fe2O3","elements":["Fe","O"],"keywords":"magnetic"}
-```
-
-Returns DOI-deduplicated `papers`, the bibliographic query, and independent literature-source statuses. The materials API never calls or depends on the papers API.
-
-`GET /api/providers` returns source availability and public configuration readiness; credentials are never returned.
-
-## Verify
-
-```sh
-npm test
-npm run typecheck
-npm run build
-npx playwright install chromium
-npm run test:browser
-npm run smoke
-```
-
-Unit tests cover matching, validation, normalization, distinct structures, safe CSV exports, signed pagination, partial outages, independent literature failure, caching and quotas. Browser tests use explicitly isolated API fixtures and check desktop/mobile interactions. `npm run smoke` makes real upstream requests, compares records to their original API entries, and checks live pagination and literature. It needs internet access and consumes a few source requests.
-
-Materials Project and OpenAlex require your credentials to verify live. No public deployment is created by these commands.
-
-## Extending sources
-
-Add a fixed endpoint and public metadata in `src/server/providers.ts`, a normalization adapter in `src/server/materials.ts`, and the identifier in `src/lib/types.ts`. Update host allowlists, quotas, and validation tests. OPTIMADE providers share composition filtering, but their metadata and reuse terms still need individual verification.
+- [Local setup and optional credentials](TECHNICAL.md#run-locally)
+- [Data sources, attribution, and reuse terms](TECHNICAL.md#data-sources-and-reuse)
+- [Vercel deployment and production configuration](TECHNICAL.md#public-deployment-on-vercel)
+- [Quotas, caching, and failure behavior](TECHNICAL.md#quotas-and-failure-behavior)
+- [API request and response contracts](TECHNICAL.md#api)
+- [Tests and live verification commands](TECHNICAL.md#verify)
+- [Adding a materials source](TECHNICAL.md#extending-sources)

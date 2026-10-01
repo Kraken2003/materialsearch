@@ -1,4 +1,11 @@
-import type { Paper } from './types';
+import type { Paper, Reference } from './types';
+export function referenceLink(reference: Reference): {url:string;kind:'direct'|'search'} {
+ const doi = normalizedDoi(reference.doi || null);
+ if (doi) return {url:'https://doi.org/'+encodeURI(doi),kind:'direct'};
+ const url = safeUrl(reference.url);
+ if (url) return {url,kind:'direct'};
+ return {url:'https://scholar.google.com/scholar?'+new URLSearchParams({q:'"'+reference.title+'"'}).toString(),kind:'search'};
+}
 export function normalizedDoi(doi: string | null): string | null {
  return doi?.trim().replace(/^https?:\/\/(?:dx\.)?doi\.org\//i,'').replace(/^doi:\s*/i,'').toLowerCase() || null;
 }

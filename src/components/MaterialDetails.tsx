@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import type { Material, PapersResponse } from '@/lib/types';
-import { safeUrl } from '@/lib/papers';
+import { referenceLink } from '@/lib/papers';
 import Formula from './Formula';
 export default function MaterialDetails({material,onClose}:{material:Material;onClose:()=>void}) {
  const dialog=useRef<HTMLDialogElement>(null);
@@ -22,15 +22,15 @@ export default function MaterialDetails({material,onClose}:{material:Material;on
        <p className="record-id">{material.datasetId || material.id}</p>
        <p className="muted">{material.origin || 'Database material record'}</p>
        <a className="primary-link" href={material.sourceUrl} target="_blank" rel="noopener noreferrer">Open original record <span aria-hidden="true">↗</span></a>
-       <section className="detail-section"><h3>Available properties</h3><dl className="properties">{properties.map(([label,value])=><div key={String(label)}><dt>{label}</dt><dd>{value ?? <span className="unavailable">Unavailable</span>}</dd></div>)}</dl><p className="fine-print">Values come from this source. Calculated properties depend on the source’s methods and are not universally comparable.</p></section>
-       <section className="detail-section"><h3>Source-provided references</h3>
+       <section className="detail-section"><h3>Material properties</h3><dl className="properties">{properties.map(([label,value])=><div key={String(label)}><dt>{label}</dt><dd>{value ?? <span className="unavailable">Unavailable</span>}</dd></div>)}</dl><p className="fine-print">Values are supplied by this database. Check the calculation methods before comparing properties across databases.</p></section>
+       <section className="detail-section"><h3>References from the database</h3>
          {material.references.length ? <ul className="reference-list">{material.references.map((r,i)=>{
-           const url = r.doi ? 'https://doi.org/'+encodeURI(r.doi) : safeUrl(r.url);
-           return <li key={i}><span className="reference-kind">{r.kind === 'dataset' ? 'Dataset citation':'Record reference'}</span>{url?<a href={url} target="_blank" rel="noopener noreferrer">{r.title}</a>:<strong>{r.title}</strong>}<p>{[r.authors,r.year].filter(Boolean).join(' · ')}</p></li>;
+           const link = referenceLink(r);
+           return <li key={i}><span className="reference-kind">{r.kind === 'dataset' ? 'Dataset citation':'Record reference'}</span><a href={link.url} target="_blank" rel="noopener noreferrer">{r.title} <span aria-hidden="true">↗</span></a>{link.kind==='search' && <span className="reference-kind">Search by title on Google Scholar · no DOI or direct URL supplied</span>}<p>{[r.authors,r.year].filter(Boolean).join(' · ')}</p></li>;
          })}</ul> : <p className="muted">No references were supplied in this database response. The original record may contain additional citations.</p>}
        </section>
        <PaperPanel key={material.source+material.id} material={material}/>
-       <section className="detail-section attribution"><h3>Provenance & attribution</h3><p>{material.attribution || material.sourceName}</p><p>{material.license}</p><p>Record ID: {material.id}</p><p>Retrieved: {material.retrievedAt}</p></section>
+       <section className="detail-section attribution"><h3>Source and license</h3><p>{material.attribution || material.sourceName}</p><p>{material.license}</p><p>Record ID: {material.id}</p><p>Retrieved: {material.retrievedAt}</p></section>
      </div>
    </div>
  </dialog>;
@@ -54,12 +54,12 @@ function PaperPanel({material}:{material:Material}) {
  const failed=result?.sources.filter(s=>s.state==='unavailable' || s.state==='quota-limited') || [];
  return <section className="detail-section paper-section" aria-labelledby="paper-heading">
    <div className="section-heading"><h3 id="paper-heading">Related papers</h3><span className="optional-tag">Additional context</span></div>
-   <p className="muted">Search-discovered literature. A match does not verify this material’s composition, synthesis, or experimental validation.</p>
+   <p className="muted">Papers are found by searching the formula and element names. Check each paper to see whether it studies this material.</p>
    <form className="paper-search" onSubmit={e=>{e.preventDefault();void search(keywords);}}>
      <label htmlFor="paper-keywords">Refine with keywords</label>
      <div><input id="paper-keywords" placeholder="e.g. battery, magnetic, synthesis" value={keywords} maxLength={160} onChange={e=>setKeywords(e.target.value)}/><button className="secondary-button" type="submit" disabled={loading}>Find papers</button></div>
    </form>
-   {loading && <p role="status" className="loading-text">Searching literature… Your material record is already available.</p>}
+   {loading && <p role="status" className="loading-text">Searching for related papers…</p>}
    {error && <div className="error-notice" role="alert">{error}<button className="text-button" onClick={()=>void search(keywords)}>Retry literature search</button></div>}
    {result && <>
      <div className="literature-status">{result.sources.map(s=><p key={s.id}><strong>{s.name}</strong>: {s.state === 'ok'?s.loaded+' papers':s.state === 'empty'?'No matches':s.state === 'disabled'?'Not configured':s.message || 'Unavailable'}</p>)}</div>
@@ -70,7 +70,7 @@ function PaperPanel({material}:{material:Material}) {
        <p>{p.authors.length ? p.authors.slice(0,3).join(', ')+(p.authors.length>3?' et al.':''):'Authors unavailable'}</p>
        {p.openAccessUrl && <a className="open-access" href={p.openAccessUrl} target="_blank" rel="noopener noreferrer">Open-access version</a>}
      </li>)}</ul>
-     <p className="fine-print">Limited to results returned by the configured sources. No papers found does not mean no papers exist. Review the original paper before relying on a match.</p>
+     <p className="fine-print">This search may miss relevant papers. Follow the paper links to read the original research.</p>
    </>}
  </section>;
 }

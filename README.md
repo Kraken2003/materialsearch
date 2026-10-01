@@ -29,29 +29,27 @@ Optional: put your free Materials Project key in `MP_API_KEY` and OpenAlex key i
 
 The two keyless materials endpoints returned real Si–O records during initial verification on October 1, 2026. Endpoints, uptime, quotas, and terms can change.
 
-References supplied by a record are separate from general dataset citations and search-discovered papers. Literature results are relevance candidates, not evidence that a paper synthesized or validated the exact structure. Formula aliases and full element names help discovery, but this is not an exhaustive systematic-review search.
+References supplied by a record are separate from general dataset citations and search-discovered papers. References with a DOI or safe URL link directly to that publication; references without either link to a clearly labeled Google Scholar title search. Literature results are relevance candidates, not evidence that a paper synthesized or validated the exact structure. Formula aliases and full element names help discovery, but this is not an exhaustive systematic-review search.
 
 ## Public deployment on Vercel
 
 1. Import this directory as a Next.js project. Build: `npm run build`. No database migrations are needed.
-2. Create an Upstash Redis database on its free plan. Add `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` to Vercel environment variables. Do not enable paid overages.
-3. Run `openssl rand -hex 32` yourself and put its output in `CURSOR_SECRET`. Keep this secret stable across deployments.
-4. Add optional API keys and `CONTACT_EMAIL`. Public Materials Project access also requires `MP_PUBLIC_USE_CONFIRMED=true` after reviewing your account's current terms. Its adapter remains disabled in production until both conditions are met.
-5. Deploy. Confirm `/api/providers` reports `searchReady: true`, then perform a live composition search, pagination, CSV export, and literature search.
+2. Run `openssl rand -hex 32` yourself and put its output in `CURSOR_SECRET`. Keep this secret stable across deployments.
+3. Add optional API keys and `CONTACT_EMAIL`. Public Materials Project access also requires `MP_PUBLIC_USE_CONFIRMED=true` after reviewing your account's current terms. Its adapter remains disabled in production until both conditions are met.
+4. Deploy. Confirm `/api/providers` reports `searchReady: true`, then perform a live composition search, pagination, CSV export, and literature search.
 
-Production search fails closed when shared quota storage or cursor signing is absent. Redis outages also prevent uncached requests from bypassing limits. Local development without Redis uses bounded process-local caches and counters; this mode is not a substitute for shared public limits.
+No external cache or database service is required. Development and production both use bounded in-memory caches and counters. Limits and request coalescing apply per server instance and reset on restart; they are not global limits across a serverless deployment. Production still requires a cursor-signing secret to prevent pagination tampering.
 
-The app makes no paid AI calls or paid fallback requests. Hosting, Redis operations, and external API allowances remain subject to provider plans; application request caps cannot guarantee a zero hosting bill. Start on free plans and monitor their dashboards.
+The app makes no paid AI calls or paid fallback requests. Hosting and external API allowances remain subject to provider plans; per-instance request caps cannot guarantee a zero hosting bill or enforce an account-wide daily budget. Start on free plans without paid overages.
 
 ## Quotas and failure behavior
 
 - Per-client limit: 12 API calls/minute. On Vercel, client identity uses Vercel's forwarded IP header and stores only its hash. Other hosts share one conservative client bucket.
-- Shared public limit: 1,000 API calls/day. Source fan-out in the UI uses one API call per selected database. Literature requests use another call.
-- Upstream daily cache-miss caps: COD 300, Materials Cloud 300, Materials Project 200, Crossref 400, OpenAlex 50. UTC daily reset.
-- Materials cached 15 minutes; paper metadata cached 1 hour. Concurrent identical calls coalesce locally and through Redis leases.
+- Per-instance public limit: 1,000 API calls/day. Source fan-out in the UI uses one API call per selected database. Literature requests use another call.
+- Per-instance upstream daily cache-miss caps: COD 300, Materials Cloud 300, Materials Project 200, Crossref 400, OpenAlex 50. UTC daily reset, or earlier on restart.
+- Materials cached 15 minutes; paper metadata cached 1 hour. Concurrent identical calls coalesce within the same process.
 - Every upstream request has a 12-second timeout, a bounded response size, and no automatic retry. Rate/quota failures are displayed independently.
 - Configure caps in the environment template. No arbitrary URLs are accepted: only fixed provider endpoints and signed, validated pagination links.
-- Redis usage also needs monitoring. Rate limits reduce upstream costs; requests rejected at the guard still use quota-storage operations.
 
 ## API
 
@@ -86,7 +84,7 @@ npm run smoke
 
 Unit tests cover matching, validation, normalization, distinct structures, safe CSV exports, signed pagination, partial outages, independent literature failure, caching and quotas. Browser tests use explicitly isolated API fixtures and check desktop/mobile interactions. `npm run smoke` makes real upstream requests, compares records to their original API entries, and checks live pagination and literature. It needs internet access and consumes a few source requests.
 
-Materials Project, OpenAlex, and real Upstash integration require your credentials to verify live. No public deployment is created by these commands.
+Materials Project and OpenAlex require your credentials to verify live. No public deployment is created by these commands.
 
 ## Extending sources
 

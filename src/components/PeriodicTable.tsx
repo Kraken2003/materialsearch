@@ -18,9 +18,8 @@ export default function PeriodicTable({include,exclude,selection,onToggle}:Props
  return <div className="table-scroll" tabIndex={0} aria-label="Periodic table, scroll horizontally on smaller screens">
    <div className="periodic-table" role="group" aria-label={'Periodic table. Click elements to '+selection+'. Use arrow keys to move between elements.'}>
      <div className="table-note">
-       <span className="table-note-icon" aria-hidden="true">⌘</span>
-       <strong>A world of materials.<br/>One combination at a time.</strong>
-       <span>Click an element to {selection}.<br/>Your search starts with a composition.</span>
+       <strong>Choose elements<br/>for your search.</strong>
+       <span>Click an element to {selection} it.<br/>Click it again to remove the selection.</span>
      </div>
      <div className="series-marker" style={{gridRow:6,gridColumn:3}}>57–71<br/><span>La–Lu</span></div>
      <div className="series-marker" style={{gridRow:7,gridColumn:3}}>89–103<br/><span>Ac–Lr</span></div>

@@ -7,11 +7,25 @@ const providers = [
 ];
 const material = {id:'test-no-paper',source:'cod',sourceName:'Crystallography Open Database',formula:'Fe2O3',elements:['Fe','O'],sourceUrl:'https://www.crystallography.net/cod/9015965.html',references:[],properties:{spaceGroup:'R -3 c'},license:'CC0',retrievedAt:'2026-10-01'};
 test.beforeEach(async({page})=>{
+ // These interaction tests must not wait on a third-party font service.
+ await page.route('https://fonts.googleapis.com/**',route=>route.abort());
+ await page.route('https://fonts.gstatic.com/**',route=>route.abort());
  await page.route('**/api/providers',route=>route.fulfill({json:{providers,searchReady:true}}));
  await page.route('**/api/materials/search',route=>{
    const q = route.request().postDataJSON();
    return route.fulfill({json:{query:q,records:q.sources.includes('cod') ? [material,{...material,id:'second-structure'}] : [],sources:[{id:q.sources[0],name:providers.find(p=>p.id===q.sources[0])!.name,state:q.sources[0]==='cod' ? 'ok':'empty',loaded:q.sources[0]==='cod' ? 2:0}]}});
  });
+});
+test('automatically searches every enabled database without a source chooser',async({page})=>{
+ await page.route('**/api/providers',route=>route.fulfill({json:{providers:providers.map(p=>({...p,enabled:true})),searchReady:true}}));
+ const searched:string[]=[];
+ page.on('request',request=>{if(request.url().includes('/api/materials/search')) searched.push(...request.postDataJSON().sources);});
+ await page.goto('/');
+ await expect(page.getByRole('group',{name:'Search databases'})).toHaveCount(0);
+ await expect(page.getByRole('checkbox')).toHaveCount(0);
+ await page.getByRole('button',{name:/^Iron oxides/}).click();
+ await page.getByRole('button',{name:'Search materials',exact:true}).click();
+ await expect.poll(()=>[...searched].sort()).toEqual(['cod','mcloud','mp']);
 });
 test('selects elements, preserves records without papers, and exports both structures',async({page})=>{
  await page.route('**/api/papers/search',route=>route.fulfill({json:{papers:[],sources:[{id:'crossref',name:'Crossref',state:'empty',loaded:0}],query:'Fe2O3 iron oxygen'}}));
@@ -21,6 +35,7 @@ test('selects elements, preserves records without papers, and exports both struc
  await page.getByRole('button',{name:/^Oxygen \(O\)/}).click();
  await page.getByRole('button',{name:'Search materials',exact:true}).click();
  await expect(page.getByTestId('material-record')).toHaveCount(2);
+ await expect(page.locator('#results-heading')).toBeInViewport();
  await page.getByRole('button',{name:'Explore test-no-paper'}).click();
  await expect(page.getByText('No related papers found in the searched sources.')).toBeVisible();
  await expect(page.getByRole('link',{name:'Open original record'})).toBeVisible();
@@ -82,4 +97,18 @@ test('moves an element between include and exclude and submits exact composition
  await page.getByRole('button',{name:'Search materials',exact:true}).click();
  const body=(await request).postDataJSON();
  expect(body.include).toEqual(['O','Fe']);expect(body.exclude).toEqual(['Pb']);expect(body.mode).toBe('exact');
+});
+test('reference titles without a DOI are clickable and clearly labeled as searches',async({page})=>{
+ await page.route('**/api/materials/search',route=>{
+   const q=route.request().postDataJSON();
+   return route.fulfill({json:{query:q,records:[{...material,references:[{title:'A new metal-spinel composite',authors:'A. Scientist',year:1993,kind:'record'},{title:'A paper with a DOI',doi:'10.123/direct',kind:'record'}]}],sources:[{id:'cod',name:'COD',state:'ok',loaded:1}]}});
+ });
+ await page.route('**/api/papers/search',route=>route.fulfill({json:{papers:[],sources:[{id:'crossref',name:'Crossref',state:'empty',loaded:0}],query:'Fe2O3'}}));
+ await page.goto('/?include=Fe,O&mode=exact&sources=cod');
+ await page.getByRole('button',{name:'Explore test-no-paper'}).click();
+ const fallback=page.getByRole('link',{name:'A new metal-spinel composite'});
+ await expect(fallback).toBeVisible();
+ expect(new URL((await fallback.getAttribute('href'))!).searchParams.get('q')).toBe('"A new metal-spinel composite"');
+ await expect(page.getByText('Search by title on Google Scholar · no DOI or direct URL supplied')).toBeVisible();
+ await expect(page.getByRole('link',{name:'A paper with a DOI'})).toHaveAttribute('href','https://doi.org/10.123/direct');
 });

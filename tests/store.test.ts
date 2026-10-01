@@ -13,7 +13,9 @@ it('coalesces concurrent requests and caches the resulting value', async () => {
  expect(result[0]).toEqual(result[1]); expect(requests).toBe(1);
  expect(await cached('coalescing-test',60,work)).toEqual(result[0]); expect(requests).toBe(1);
 });
-it('fails closed in production without shared quota storage', async () => {
- vi.stubEnv('NODE_ENV','production'); vi.stubEnv('UPSTASH_REDIS_REST_URL',''); vi.stubEnv('UPSTASH_REDIS_REST_TOKEN','');
- await expect(takeQuota('production',1,60)).rejects.toThrow('Shared quota storage');
+it('supports production caching and limits without external storage', async () => {
+ vi.stubEnv('NODE_ENV','production');
+ expect(await takeQuota('production',1,60)).toBe(true);
+ expect(await takeQuota('production',1,60)).toBe(false);
+ expect(await cached('production-cache',60,async()=>({records:['material']}))).toEqual({records:['material']});
 });
